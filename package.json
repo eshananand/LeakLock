@@ -1,0 +1,25 @@
+{
+  "name": "leaklock",
+  "version": "1.0.0",
+  "description": "A Claude Code plugin that detects, redacts, and logs sensitive data (PII, API keys, secrets) before it reaches the LLM.",
+  "main": "src/index.js",
+  "bin": {
+    "leaklock": "./src/cli.js",
+    "leaklock-hook": "./src/hook.js"
+  },
+  "scripts": {
+    "test": "node --test test/**/*.test.js",
+    "hook": "node src/hook.js",
+    "install-hook": "node src/install.js"
+  },
+  "keywords": [
+    "claude-code",
+    "security",
+    "pii",
+    "redaction",
+    "secrets",
+    "api-keys",
+    "data-loss-prevention"
+  ],
+  "license": "MIT"
+}

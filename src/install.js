@@ -17,8 +17,8 @@ const CLAUDE_SETTINGS_DIR = path.join(
 const SETTINGS_FILE = path.join(CLAUDE_SETTINGS_DIR, "settings.json");
 const HOOK_COMMAND = `node ${path.resolve(__dirname, "hook.js")}`;
 
-// Both hook events that LeakLock registers
-const HOOK_EVENTS = ["PreToolUse", "UserPromptSubmit"];
+// All hook events that LeakLock registers
+const HOOK_EVENTS = ["PreToolUse", "UserPromptSubmit", "PostToolUse"];
 
 function isLeakLockHook(entry) {
   return (
@@ -88,6 +88,7 @@ function install() {
   console.log("[LeakLock] What's protected:");
   console.log("  - UserPromptSubmit: Blocks messages containing sensitive data BEFORE Claude sees them");
   console.log("  - PreToolUse:       Redacts sensitive data in tool inputs (Write, Bash, Edit, etc.)");
+  console.log("  - PostToolUse:      Redacts sensitive data in tool responses (MCP servers like Grafana, Slack, etc.)");
   console.log("");
   console.log("[LeakLock] Configuration (optional):");
   console.log("  Create a .leaklock.json in your project root to customize:");

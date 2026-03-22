@@ -4,10 +4,11 @@ A Claude Code plugin that detects, redacts, and logs sensitive data — API keys
 
 ## What It Does
 
-LeakLock installs **two hooks** in Claude Code:
+LeakLock installs **three hooks** in Claude Code:
 
 - **UserPromptSubmit** — scans your messages and **blocks** them before Claude ever sees the sensitive data
 - **PreToolUse** — scans tool inputs (Write, Bash, Edit, etc.) and **redacts** sensitive data in-flight
+- **PostToolUse** — scans tool responses (MCP servers like Grafana, Slack, etc.) and **redacts** sensitive data before Claude processes it
 
 For each detection it:
 
@@ -39,7 +40,7 @@ node src/install.js
 
 ## How It Works
 
-When installed, LeakLock adds two hooks to `~/.claude/settings.json`:
+When installed, LeakLock adds three hooks to `~/.claude/settings.json`:
 
 ```json
 {
@@ -55,22 +56,33 @@ When installed, LeakLock adds two hooks to `~/.claude/settings.json`:
         "matcher": "",
         "hooks": [{ "type": "command", "command": "node /path/to/LeakLock/src/hook.js" }]
       }
+    ],
+    "PostToolUse": [
+      {
+        "matcher": "",
+        "hooks": [{ "type": "command", "command": "node /path/to/LeakLock/src/hook.js" }]
+      }
     ]
   }
 }
 ```
 
-> The `matcher` field filters what to scan — `""` (empty) matches everything. For PreToolUse you can restrict to specific tools like `"Bash"` or `"Edit|Write"` (pipe-separated).
+> The `matcher` field filters what to scan — `""` (empty) matches everything. For PreToolUse/PostToolUse you can restrict to specific tools like `"Bash"` or `"mcp__grafana"` (pipe-separated).
 
 **UserPromptSubmit** (your messages):
 - Scans the prompt text before Claude sees it
-- If sensitive data is found: **blocks** the message and tells you exactly what was detected
+- If sensitive data is found: **blocks** the message and shows a redacted copy you can resend
 - If clean: passes through silently
 
-**PreToolUse** (tool calls):
+**PreToolUse** (tool inputs):
 - Scans all string fields in tool input recursively
 - If sensitive data is found: **redacts** it in-place, notifies you, and logs the event
 - If clean: passes through silently
+
+**PostToolUse** (tool responses — MCP servers):
+- Scans tool output after execution (e.g. Grafana logs, Slack messages, DB query results)
+- If sensitive data is found: **replaces** the MCP tool output with a redacted version via `updatedMCPToolOutput`
+- Prevents leaked credentials, PII, and secrets in external data from entering Claude's context
 
 ## Configuration
 

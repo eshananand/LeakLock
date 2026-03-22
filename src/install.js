@@ -35,12 +35,15 @@ function install() {
   }
 
   // Ensure hooks structure exists
+  // Claude Code format: hooks.PreToolUse is an array of { matcher, hooks[] }
   if (!settings.hooks) settings.hooks = {};
   if (!settings.hooks.PreToolUse) settings.hooks.PreToolUse = [];
 
-  // Check if already installed
+  // Check if already installed (search inside nested hooks arrays)
   const alreadyInstalled = settings.hooks.PreToolUse.some(
-    (hook) => hook.command && hook.command.includes("leaklock")
+    (entry) =>
+      entry.hooks &&
+      entry.hooks.some((h) => h.command && h.command.includes("leaklock"))
   );
 
   if (alreadyInstalled) {
@@ -49,11 +52,17 @@ function install() {
     return;
   }
 
-  // Add the hook
+  // Add the hook using the correct Claude Code format:
+  //   matcher: "" means match all tools (empty string = catch-all)
+  //   hooks: array of command hooks to run
   settings.hooks.PreToolUse.push({
-    type: "command",
-    command: HOOK_COMMAND,
-    description: "LeakLock: Scans for and redacts sensitive data (PII, API keys, secrets) before sending to Claude",
+    matcher: "",
+    hooks: [
+      {
+        type: "command",
+        command: HOOK_COMMAND,
+      },
+    ],
   });
 
   fs.writeFileSync(SETTINGS_FILE, JSON.stringify(settings, null, 2) + "\n");
@@ -92,7 +101,9 @@ function uninstall() {
 
   const before = settings.hooks.PreToolUse.length;
   settings.hooks.PreToolUse = settings.hooks.PreToolUse.filter(
-    (hook) => !hook.command || !hook.command.includes("leaklock")
+    (entry) =>
+      !entry.hooks ||
+      !entry.hooks.some((h) => h.command && h.command.includes("leaklock"))
   );
   const removed = before - settings.hooks.PreToolUse.length;
 

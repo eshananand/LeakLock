@@ -41,14 +41,20 @@ When installed, LeakLock adds a hook to `~/.claude/settings.json`:
   "hooks": {
     "PreToolUse": [
       {
-        "type": "command",
-        "command": "node /path/to/LeakLock/src/hook.js",
-        "description": "LeakLock: Scans for and redacts sensitive data before sending to Claude"
+        "matcher": "",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "node /path/to/LeakLock/src/hook.js"
+          }
+        ]
       }
     ]
   }
 }
 ```
+
+> The `matcher` field filters which tools to scan — `""` (empty) matches **all** tools. You can restrict it to specific tools like `"Bash"` or `"Edit|Write"` (pipe-separated).
 
 When Claude calls any tool, the hook:
 - Receives the tool input via stdin

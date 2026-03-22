@@ -3,8 +3,8 @@
 /**
  * LeakLock - Installer
  *
- * Adds LeakLock as a Claude Code PreToolUse hook in the user's
- * Claude Code settings (~/.claude/settings.json).
+ * Adds LeakLock as both a PreToolUse and UserPromptSubmit hook
+ * in the user's Claude Code settings (~/.claude/settings.json).
  */
 
 const fs = require("fs");
@@ -17,8 +17,18 @@ const CLAUDE_SETTINGS_DIR = path.join(
 const SETTINGS_FILE = path.join(CLAUDE_SETTINGS_DIR, "settings.json");
 const HOOK_COMMAND = `node ${path.resolve(__dirname, "hook.js")}`;
 
+// Both hook events that LeakLock registers
+const HOOK_EVENTS = ["PreToolUse", "UserPromptSubmit"];
+
+function isLeakLockHook(entry) {
+  return (
+    entry.hooks &&
+    entry.hooks.some((h) => h.command && h.command.includes("leaklock"))
+  );
+}
+
 function install() {
-  console.log("[LeakLock] Installing Claude Code hook...\n");
+  console.log("[LeakLock] Installing Claude Code hooks...\n");
 
   // Load existing settings or start fresh
   let settings = {};
@@ -34,42 +44,50 @@ function install() {
     }
   }
 
-  // Ensure hooks structure exists
-  // Claude Code format: hooks.PreToolUse is an array of { matcher, hooks[] }
   if (!settings.hooks) settings.hooks = {};
-  if (!settings.hooks.PreToolUse) settings.hooks.PreToolUse = [];
 
-  // Check if already installed (search inside nested hooks arrays)
-  const alreadyInstalled = settings.hooks.PreToolUse.some(
-    (entry) =>
-      entry.hooks &&
-      entry.hooks.some((h) => h.command && h.command.includes("leaklock"))
-  );
+  let installed = 0;
 
-  if (alreadyInstalled) {
-    console.log("[LeakLock] Hook is already installed in Claude Code settings.");
+  for (const event of HOOK_EVENTS) {
+    if (!settings.hooks[event]) settings.hooks[event] = [];
+
+    // Check if already installed for this event
+    const alreadyInstalled = settings.hooks[event].some(isLeakLockHook);
+    if (alreadyInstalled) {
+      console.log(`[LeakLock] ${event} hook already installed — skipping.`);
+      continue;
+    }
+
+    // Add the hook
+    // matcher: "" means match all (tools for PreToolUse, all prompts for UserPromptSubmit)
+    settings.hooks[event].push({
+      matcher: "",
+      hooks: [
+        {
+          type: "command",
+          command: HOOK_COMMAND,
+        },
+      ],
+    });
+    installed++;
+    console.log(`[LeakLock] ${event} hook added.`);
+  }
+
+  if (installed === 0) {
+    console.log("\n[LeakLock] All hooks were already installed.");
     console.log(`[LeakLock] Settings file: ${SETTINGS_FILE}`);
     return;
   }
 
-  // Add the hook using the correct Claude Code format:
-  //   matcher: "" means match all tools (empty string = catch-all)
-  //   hooks: array of command hooks to run
-  settings.hooks.PreToolUse.push({
-    matcher: "",
-    hooks: [
-      {
-        type: "command",
-        command: HOOK_COMMAND,
-      },
-    ],
-  });
-
   fs.writeFileSync(SETTINGS_FILE, JSON.stringify(settings, null, 2) + "\n");
 
-  console.log("[LeakLock] Hook installed successfully!");
+  console.log(`\n[LeakLock] ${installed} hook(s) installed successfully!`);
   console.log(`[LeakLock] Settings file: ${SETTINGS_FILE}`);
   console.log(`[LeakLock] Hook command:  ${HOOK_COMMAND}`);
+  console.log("");
+  console.log("[LeakLock] What's protected:");
+  console.log("  - UserPromptSubmit: Blocks messages containing sensitive data BEFORE Claude sees them");
+  console.log("  - PreToolUse:       Redacts sensitive data in tool inputs (Write, Bash, Edit, etc.)");
   console.log("");
   console.log("[LeakLock] Configuration (optional):");
   console.log("  Create a .leaklock.json in your project root to customize:");
@@ -79,7 +97,7 @@ function install() {
 }
 
 function uninstall() {
-  console.log("[LeakLock] Removing Claude Code hook...\n");
+  console.log("[LeakLock] Removing Claude Code hooks...\n");
 
   if (!fs.existsSync(SETTINGS_FILE)) {
     console.log("[LeakLock] No settings file found. Nothing to remove.");
@@ -94,26 +112,34 @@ function uninstall() {
     return;
   }
 
-  if (!settings.hooks || !settings.hooks.PreToolUse) {
-    console.log("[LeakLock] No PreToolUse hooks found. Nothing to remove.");
+  if (!settings.hooks) {
+    console.log("[LeakLock] No hooks found. Nothing to remove.");
     return;
   }
 
-  const before = settings.hooks.PreToolUse.length;
-  settings.hooks.PreToolUse = settings.hooks.PreToolUse.filter(
-    (entry) =>
-      !entry.hooks ||
-      !entry.hooks.some((h) => h.command && h.command.includes("leaklock"))
-  );
-  const removed = before - settings.hooks.PreToolUse.length;
+  let totalRemoved = 0;
 
-  if (removed === 0) {
-    console.log("[LeakLock] Hook was not found in settings.");
+  for (const event of HOOK_EVENTS) {
+    if (!settings.hooks[event]) continue;
+
+    const before = settings.hooks[event].length;
+    settings.hooks[event] = settings.hooks[event].filter(
+      (entry) => !isLeakLockHook(entry)
+    );
+    const removed = before - settings.hooks[event].length;
+    if (removed > 0) {
+      console.log(`[LeakLock] Removed ${removed} ${event} hook(s).`);
+      totalRemoved += removed;
+    }
+  }
+
+  if (totalRemoved === 0) {
+    console.log("[LeakLock] No LeakLock hooks were found in settings.");
     return;
   }
 
   fs.writeFileSync(SETTINGS_FILE, JSON.stringify(settings, null, 2) + "\n");
-  console.log(`[LeakLock] Removed ${removed} hook(s). Settings updated.`);
+  console.log(`\n[LeakLock] Removed ${totalRemoved} hook(s) total. Settings updated.`);
 }
 
 // CLI

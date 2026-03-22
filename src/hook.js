@@ -3,16 +3,18 @@
 /**
  * LeakLock - Claude Code Hook Entry Point
  *
- * This script is invoked by Claude Code as a "PreToolUse" hook.
- * It reads the tool input from stdin (JSON), scans all string fields
- * for sensitive data, redacts them, and writes the modified input
- * back to stdout so Claude Code uses the sanitized version.
+ * This script handles TWO hook events:
  *
- * Hook protocol (Claude Code):
- *   stdin  → { tool_name, tool_input }
- *   stdout → JSON with optional "decision" and modified "tool_input"
+ *   1. UserPromptSubmit — fires when the user types a message.
+ *      stdin:  { hook_event_name, prompt, session_id, ... }
+ *      stdout: { decision: "block", reason } to block, OR
+ *              exit 0 to allow through.
  *
- * Decisions: "approve" (continue with changes), "block" (abort tool call)
+ *   2. PreToolUse — fires when Claude calls a tool (Write, Bash, etc.).
+ *      stdin:  { hook_event_name, tool_name, tool_input, ... }
+ *      stdout: { decision: "approve", tool_input } with redacted input, OR
+ *              { decision: "block", reason } to block, OR
+ *              exit 0 to allow unchanged.
  */
 
 const { redact } = require("./redactor");
@@ -35,6 +37,75 @@ async function main() {
     process.exit(0);
   }
 
+  const eventName = hookInput.hook_event_name || "";
+
+  if (eventName === "UserPromptSubmit") {
+    handleUserPrompt(hookInput);
+  } else {
+    handlePreToolUse(hookInput);
+  }
+}
+
+/**
+ * Handle UserPromptSubmit — scan the user's message before Claude sees it.
+ */
+function handleUserPrompt(hookInput) {
+  const prompt = hookInput.prompt || "";
+
+  const config = loadConfig();
+  const logger = createLogger({
+    logDir: config.logDir,
+    silent: config.silent,
+  });
+  const detectOptions = {
+    categories: config.categories,
+    severities: severitiesAtOrAbove(config.minSeverity),
+    extraPatterns: config.extraPatterns,
+  };
+
+  const result = redact(prompt, detectOptions);
+
+  if (result.findings.length === 0) {
+    // Clean — allow through
+    process.exit(0);
+  }
+
+  // Log and notify
+  logger.log(result, { source: "UserPromptSubmit" });
+
+  if (config.action === "block") {
+    const output = {
+      decision: "block",
+      reason:
+        `LeakLock blocked this message because it contained ` +
+        `${result.findings.length} piece(s) of sensitive data: ` +
+        result.findings.map((f) => f.name).join(", ") +
+        `. Please remove sensitive data before sending.`,
+    };
+    process.stdout.write(JSON.stringify(output));
+  } else if (config.action === "warn") {
+    // Warn (notification already printed) but allow through
+    process.exit(0);
+  } else {
+    // "redact" — we cannot modify the prompt text for UserPromptSubmit,
+    // so we block and tell the user what was found.
+    const output = {
+      decision: "block",
+      reason:
+        `LeakLock detected sensitive data in your message and blocked it to protect you:\n\n` +
+        result.findings
+          .map((f) => `  [${f.severity.toUpperCase()}] ${f.name}: ${f.matched}`)
+          .join("\n") +
+        `\n\nPlease remove or replace the sensitive data before sending.`,
+    };
+    process.stdout.write(JSON.stringify(output));
+  }
+}
+
+/**
+ * Handle PreToolUse — scan and redact tool inputs before execution.
+ */
+function handlePreToolUse(hookInput) {
   const toolName = hookInput.tool_name || "unknown";
   const toolInput = hookInput.tool_input || {};
 
@@ -43,7 +114,6 @@ async function main() {
     logDir: config.logDir,
     silent: config.silent,
   });
-
   const detectOptions = {
     categories: config.categories,
     severities: severitiesAtOrAbove(config.minSeverity),
@@ -55,7 +125,6 @@ async function main() {
   let combinedSummary = {};
   const redactedInput = deepRedact(toolInput, detectOptions, (result) => {
     totalFindings = totalFindings.concat(result.findings);
-    // Merge summaries
     for (const [cat, types] of Object.entries(result.summary)) {
       if (!combinedSummary[cat]) combinedSummary[cat] = {};
       for (const [name, count] of Object.entries(types)) {
@@ -65,7 +134,6 @@ async function main() {
   });
 
   if (totalFindings.length === 0) {
-    // No sensitive data — let the tool call proceed unchanged
     process.exit(0);
   }
 
@@ -78,9 +146,7 @@ async function main() {
   // Log and notify
   logger.log(combinedResult, { toolName });
 
-  // Decide action
   if (config.action === "block") {
-    // Block the tool call entirely
     const output = {
       decision: "block",
       reason:
@@ -90,7 +156,6 @@ async function main() {
     };
     process.stdout.write(JSON.stringify(output));
   } else if (config.action === "warn") {
-    // Warn but allow through unchanged
     process.exit(0);
   } else {
     // Default: "redact" — approve with modified input
@@ -104,11 +169,6 @@ async function main() {
 
 /**
  * Recursively walk an object/array and redact all string values.
- *
- * @param {*}        value
- * @param {Object}   options  - detect() options
- * @param {Function} onResult - callback with each redact() result
- * @returns {*} The value with strings redacted
  */
 function deepRedact(value, options, onResult) {
   if (typeof value === "string") {

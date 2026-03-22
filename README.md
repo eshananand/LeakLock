@@ -4,10 +4,15 @@ A Claude Code plugin that detects, redacts, and logs sensitive data — API keys
 
 ## What It Does
 
-LeakLock installs as a **PreToolUse hook** in Claude Code. Every time Claude calls a tool (Write, Bash, Edit, etc.), LeakLock scans the tool input for sensitive data and:
+LeakLock installs **two hooks** in Claude Code:
+
+- **UserPromptSubmit** — scans your messages and **blocks** them before Claude ever sees the sensitive data
+- **PreToolUse** — scans tool inputs (Write, Bash, Edit, etc.) and **redacts** sensitive data in-flight
+
+For each detection it:
 
 1. **Detects** sensitive content using 20+ pattern rules across 4 categories
-2. **Redacts** the data in-place before it reaches Claude
+2. **Blocks or redacts** the data before it reaches Claude
 3. **Notifies** you with a visual alert in the terminal showing what was found
 4. **Logs** every detection to `~/.leaklock/detections.jsonl` for auditing
 
@@ -34,7 +39,7 @@ node src/install.js
 
 ## How It Works
 
-When installed, LeakLock adds a hook to `~/.claude/settings.json`:
+When installed, LeakLock adds two hooks to `~/.claude/settings.json`:
 
 ```json
 {
@@ -42,24 +47,29 @@ When installed, LeakLock adds a hook to `~/.claude/settings.json`:
     "PreToolUse": [
       {
         "matcher": "",
-        "hooks": [
-          {
-            "type": "command",
-            "command": "node /path/to/LeakLock/src/hook.js"
-          }
-        ]
+        "hooks": [{ "type": "command", "command": "node /path/to/LeakLock/src/hook.js" }]
+      }
+    ],
+    "UserPromptSubmit": [
+      {
+        "matcher": "",
+        "hooks": [{ "type": "command", "command": "node /path/to/LeakLock/src/hook.js" }]
       }
     ]
   }
 }
 ```
 
-> The `matcher` field filters which tools to scan — `""` (empty) matches **all** tools. You can restrict it to specific tools like `"Bash"` or `"Edit|Write"` (pipe-separated).
+> The `matcher` field filters what to scan — `""` (empty) matches everything. For PreToolUse you can restrict to specific tools like `"Bash"` or `"Edit|Write"` (pipe-separated).
 
-When Claude calls any tool, the hook:
-- Receives the tool input via stdin
-- Scans all string fields recursively
-- If sensitive data is found: redacts it, notifies you, logs the event, and returns the sanitized input
+**UserPromptSubmit** (your messages):
+- Scans the prompt text before Claude sees it
+- If sensitive data is found: **blocks** the message and tells you exactly what was detected
+- If clean: passes through silently
+
+**PreToolUse** (tool calls):
+- Scans all string fields in tool input recursively
+- If sensitive data is found: **redacts** it in-place, notifies you, and logs the event
 - If clean: passes through silently
 
 ## Configuration
@@ -138,7 +148,7 @@ LeakLock/
 │   ├── redactor.js    # Redaction module
 │   ├── logger.js      # Logging & user notifications
 │   ├── config.js      # Configuration loader
-│   ├── hook.js        # Claude Code PreToolUse hook entry point
+│   ├── hook.js        # Claude Code hook (PreToolUse + UserPromptSubmit)
 │   ├── cli.js         # Standalone CLI tool
 │   ├── install.js     # Hook installer/uninstaller
 │   └── index.js       # Public API

@@ -84,7 +84,7 @@ describe("hook — UserPromptSubmit", () => {
     assert.equal(output, null);
   });
 
-  it("blocks user prompt containing an API key", () => {
+  it("blocks prompt with API key and shows redacted version", () => {
     const input = {
       hook_event_name: "UserPromptSubmit",
       prompt: 'api_key = "sk-abc123def456ghi789jkl012mno345pqr"',
@@ -92,10 +92,12 @@ describe("hook — UserPromptSubmit", () => {
     };
     const output = runHook(input);
     assert.equal(output.decision, "block");
-    assert.ok(output.reason.includes("sensitive data"));
+    // Reason should contain the redacted message for easy copy-paste
+    assert.ok(output.reason.includes("[REDACTED_"));
+    assert.ok(!output.reason.includes("sk-abc123def456ghi789jkl012mno345pqr"));
   });
 
-  it("blocks user prompt containing an AWS key", () => {
+  it("blocks prompt with AWS key and includes redacted copy", () => {
     const input = {
       hook_event_name: "UserPromptSubmit",
       prompt: "My AWS key is AKIAIOSFODNN7EXAMPLE, can you check it?",
@@ -104,9 +106,12 @@ describe("hook — UserPromptSubmit", () => {
     const output = runHook(input);
     assert.equal(output.decision, "block");
     assert.ok(output.reason.includes("AWS Access Key"));
+    assert.ok(output.reason.includes("[REDACTED_AWS_KEY]"));
+    // The surrounding text should survive
+    assert.ok(output.reason.includes("can you check it?"));
   });
 
-  it("blocks user prompt containing an email + SSN", () => {
+  it("blocks prompt with email + SSN and redacts both", () => {
     const input = {
       hook_event_name: "UserPromptSubmit",
       prompt: "User john@example.com has SSN 123-45-6789",
@@ -115,10 +120,13 @@ describe("hook — UserPromptSubmit", () => {
     const output = runHook(input);
     assert.equal(output.decision, "block");
     assert.ok(output.reason.includes("Email Address"));
-    assert.ok(output.reason.includes("Social Security"));
+    assert.ok(output.reason.includes("[REDACTED_EMAIL]"));
+    assert.ok(output.reason.includes("[REDACTED_SSN]"));
+    // Surrounding text preserved
+    assert.ok(output.reason.includes("User"));
   });
 
-  it("blocks user prompt containing a private key", () => {
+  it("blocks prompt with private key and redacts it", () => {
     const input = {
       hook_event_name: "UserPromptSubmit",
       prompt: `Here is my key:
@@ -130,9 +138,11 @@ MIIEpAIBAAKCAQEA0Z3VS5JJcds3xfn...
     const output = runHook(input);
     assert.equal(output.decision, "block");
     assert.ok(output.reason.includes("Private Key"));
+    assert.ok(output.reason.includes("[REDACTED_PRIVATE_KEY]"));
+    assert.ok(output.reason.includes("Here is my key:"));
   });
 
-  it("blocks user prompt containing a database connection string", () => {
+  it("blocks prompt with DB connection string and redacts it", () => {
     const input = {
       hook_event_name: "UserPromptSubmit",
       prompt: "Connect to postgresql://admin:pass@db.example.com:5432/mydb",
@@ -141,5 +151,7 @@ MIIEpAIBAAKCAQEA0Z3VS5JJcds3xfn...
     const output = runHook(input);
     assert.equal(output.decision, "block");
     assert.ok(output.reason.includes("Database Connection"));
+    assert.ok(output.reason.includes("[REDACTED_DB_CONNECTION]"));
+    assert.ok(output.reason.includes("Connect to"));
   });
 });

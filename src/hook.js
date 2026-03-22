@@ -73,33 +73,23 @@ function handleUserPrompt(hookInput) {
   // Log and notify
   logger.log(result, { source: "UserPromptSubmit" });
 
-  if (config.action === "block") {
-    const output = {
-      decision: "block",
-      reason:
-        `LeakLock blocked this message because it contained ` +
-        `${result.findings.length} piece(s) of sensitive data: ` +
-        result.findings.map((f) => f.name).join(", ") +
-        `. Please remove sensitive data before sending.`,
-    };
-    process.stdout.write(JSON.stringify(output));
-  } else if (config.action === "warn") {
-    // Warn (notification already printed) but allow through
+  if (config.action === "warn") {
+    // Warn (notification already logged/printed) but allow through
     process.exit(0);
-  } else {
-    // "redact" — we cannot modify the prompt text for UserPromptSubmit,
-    // so we block and tell the user what was found.
-    const output = {
-      decision: "block",
-      reason:
-        `LeakLock detected sensitive data in your message and blocked it to protect you:\n\n` +
-        result.findings
-          .map((f) => `  [${f.severity.toUpperCase()}] ${f.name}: ${f.matched}`)
-          .join("\n") +
-        `\n\nPlease remove or replace the sensitive data before sending.`,
-    };
-    process.stdout.write(JSON.stringify(output));
   }
+
+  // Both "redact" and "block" must block the prompt since the
+  // UserPromptSubmit hook cannot modify the prompt text in-flight.
+  // We show the redacted version so the user can easily resend it.
+  const detected = result.findings.map((f) => f.name).join(", ");
+  const output = {
+    decision: "block",
+    reason:
+      `LeakLock caught ${result.findings.length} sensitive value(s) (${detected}) and blocked this message.\n\n` +
+      `Here is your message with the sensitive parts redacted — you can copy and resend it:\n\n` +
+      result.redacted,
+  };
+  process.stdout.write(JSON.stringify(output));
 }
 
 /**

@@ -149,6 +149,3 @@ LeakLock/
 └── package.json
 ```
 
-## License
-
-MIT

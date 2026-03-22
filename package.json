@@ -20,6 +20,5 @@
     "secrets",
     "api-keys",
     "data-loss-prevention"
-  ],
-  "license": "MIT"
+  ]
 }
